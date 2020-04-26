@@ -4,7 +4,11 @@ const auth = require("../middleware/authInterceptor");
 const router = express.Router();
 const Joi = require("joi");
 const axios = require('axios');
+const moment = require('moment');
 
+const AWS = require('aws-sdk');
+AWS.config.update({ region: 'us-east-1' });
+const s3 = new AWS.S3();
 
 //create member
 router.post("/createMember", auth, async (req, res, next) => {
@@ -33,6 +37,7 @@ router.post("/createMember", auth, async (req, res, next) => {
         lastName: response.data.principal.lastName,
         email: response.data.principal.email,
         phone: response.data.principal.phone,
+        profilePic: {bucket: 'zerotoheroquick-app-resources', key: 'images/profile-pic.jpg'}
       };
 
       const { error, value } = validateMember(member);
@@ -70,7 +75,15 @@ router.get("/getMember", auth, async (req, res, next) => {
     res.statusCode = 404;
     return next(new Error(`Unable to fetch member ${req.userDate.memberUuid}`));
   }
-  res.send(items.Items[0]);
+  let member = items.Items[0];
+  member.createDate = moment.utc(member.createDate).format("YYYY-MM-DD HH:mm:ss a");
+
+  member.profilePicPreSignedUrl = s3.getSignedUrl('getObject', {
+    Bucket: member.profilePic.bucket,
+    Key: member.profilePic.key,
+    Expires: 60 * 5
+  })
+  res.send(member);
 });
 
 //update member might have to filter it to specific value in the futre this is too risky
@@ -120,6 +133,7 @@ function validateMember(member) {
 
   const schema = {
     memberUuid: Joi.string().optional(),
+    profilePic: Joi.object().optional(),
     firstName: Joi.string().min(3).required(),
     lastName: Joi.string().min(3).required(),
     phone: Joi.string().min(10).required(),

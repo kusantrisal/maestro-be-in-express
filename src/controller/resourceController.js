@@ -59,13 +59,13 @@ router.get("/getResourcesByMemberUuid", auth, async (req, res, next) => {
     })
     resources.push(res);
   });
+
   //latest first
   res.send(resources.sort((a, b) => b.createDate - a.createDate));
 });
 
 //create resource
 router.post("/addResource", auth, upload.array('file', 1), async (req, res, next) => {
-
   req.body.fileLocation = req.files[0];
   const { error, value } = validateResource(req.body);
 
