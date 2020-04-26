@@ -37,7 +37,7 @@ router.post("/createMember", auth, async (req, res, next) => {
         lastName: response.data.principal.lastName,
         email: response.data.principal.email,
         phone: response.data.principal.phone,
-        profilePic: {bucket: 'zerotoheroquick-app-resources', key: 'images/profile-pic.jpg'}
+        profilePic: { bucket: 'zerotoheroquick-app-resources', key: 'images/profile-pic.jpg' }
       };
 
       const { error, value } = validateMember(member);
@@ -53,6 +53,12 @@ router.post("/createMember", auth, async (req, res, next) => {
         res.statusCode = 406;
         return next(new Error(response.message));
       }
+
+      value.profilePicPreSignedUrl = s3.getSignedUrl('getObject', {
+        Bucket: member.profilePic.bucket,
+        Key: member.profilePic.key,
+        Expires: 60 * 5
+      })
 
       return res.send(value);
 
@@ -77,13 +83,34 @@ router.get("/getMember", auth, async (req, res, next) => {
   }
   let member = items.Items[0];
   member.createDate = moment.utc(member.createDate).format("YYYY-MM-DD HH:mm:ss a");
-
+  member.lastUpdated = moment.utc(member.lastUpdated).format("YYYY-MM-DD HH:mm:ss a");
   member.profilePicPreSignedUrl = s3.getSignedUrl('getObject', {
     Bucket: member.profilePic.bucket,
     Key: member.profilePic.key,
     Expires: 60 * 5
   })
   res.send(member);
+});
+
+//update member value
+router.post("/updateMemberValue", auth, async (req, res, next) => {
+  console.log("update method invoked")
+
+  if (!req.userDate.memberUuid) {
+    return next(new Error('Unknown memberUuid'));
+  }
+
+  let items = await memberRepo.getMemberByMemberUuid(req.userDate.memberUuid);
+
+  if (!items || items.Items.length !== 1) {
+    return next(new Error(`Unable to fetch member ${req.userDate.memberUuid}`));
+  }
+  //console.log(req)
+  let [response, unused] = await Promise.all([memberRepo.updateMemberValue(req.userDate.memberUuid, req.body.key, req.body.value), memberRepo.updateMemberValue(req.userDate.memberUuid, 'lastUpdated', Date.now())]);
+  if (response.message) {
+    return next(new Error(response.message));
+  }
+  res.send(await memberRepo.getMemberByMemberUuid(req.userDate.memberUuid));
 });
 
 //update member might have to filter it to specific value in the futre this is too risky
@@ -109,6 +136,7 @@ router.put("/updateMemberByMemberUuid", async (req, res, next) => {
   }
   res.send(value);
 });
+
 
 //delete member
 router.delete("/deleteMemberByMemberUuid", async (req, res, next) => {

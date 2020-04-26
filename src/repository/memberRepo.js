@@ -22,10 +22,35 @@ const deleteMember = async member => {
             TableName: process.env.MEMBER || 'MEMBER',
             Key: {
                 'memberUuid': member.memberUuid,
-                'email': member.email
+            //    'email': member.email
             }
         };
         return await dynamoClient.delete(params).promise();
+    } catch (e) {
+        return e;
+    }
+}
+
+const updateMemberValue = async (memberUuid, key, value) => {
+    console.log(memberUuid);
+    console.log(key);
+    console.log(value);
+    try {
+        let params = {
+            TableName: process.env.MEMBER || 'MEMBER',
+            Key: {
+                'memberUuid': memberUuid
+            },
+            UpdateExpression: "set #key = :value",
+            ExpressionAttributeNames: {
+                "#key": key
+            },
+            ExpressionAttributeValues: {
+                ":value": value
+            }
+        };
+        console.log(params)
+        return await dynamoClient.update(params).promise();
     } catch (e) {
         return e;
     }
@@ -51,5 +76,6 @@ const getMemberByMemberUuid = async memberUuid => {
 module.exports = {
     createMember,
     getMemberByMemberUuid,
-    deleteMember
+    deleteMember,
+    updateMemberValue
 }
