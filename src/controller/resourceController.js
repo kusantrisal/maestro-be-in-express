@@ -8,8 +8,6 @@ const router = express.Router();
 const multer = require('multer');
 const multerS3 = require('multer-s3');
 const { v4: uuidv4 } = require('uuid');
-const member = require("../model/member");
-const memberRepo = require('../repository/memberRepo');
 
 const fs = require('fs');
 const AWS = require('aws-sdk');
@@ -22,6 +20,18 @@ const upload = multer({
     bucket: process.env.MEMBER_RESOURCES || 'zerotoheroquick-member-resources',
     key: function (req, file, cb) {
       cb(null, req.userDate.memberUuid + '/' + uuidv4() + '/' + file.originalname); //use Date.now() for unique file keys
+    },
+    contentType: function (req, file, cb) {
+      if (file.mimetype === 'image/jpeg' || file.mimetype === 'image/png') {
+        cb(null, 'image/jpeg');
+      } else if (file.mimetype === 'video/mp4') {
+        cb(null, 'video/mp4');
+      } else {
+        cb(null, file.mimetype);
+      }
+    },
+    metadata: function (req, file, cb) {
+      cb(null, { fieldName: file.fieldname });
     }
   })
 });
@@ -38,7 +48,15 @@ router.get("/getResourcesByMemberUuid", auth, async (req, res, next) => {
   let resources = [];
 
   items.Items.forEach(res => {
+    //change date to readable formate
     res.createDate = moment.utc(res.createDate).local();
+
+    //add preSingedUrl to access private data
+    res.preSignedUrl = s3.getSignedUrl('getObject', {
+      Bucket: res.fileLocation.bucket,
+      Key: res.fileLocation.key,
+      Expires: 60 * 5
+    })
     resources.push(res);
   });
   //latest first

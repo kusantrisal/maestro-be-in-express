@@ -1,19 +1,13 @@
 const express = require("express");
 const app = express();
-//const cors = require('cors');
 const errorHandler = require("./src/middleware/errorHandler")
 const bodyParser = require('body-parser');
-const multer = require('multer');
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// const formidable = require('express-formidable');
-// app.use(formidable());
 
 app.use(express.json());
-// app.use(cors());
-// app.options('*', cors());
 
 //disable cors
 app.use((req, res, next) => {
