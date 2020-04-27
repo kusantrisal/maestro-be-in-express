@@ -3,6 +3,8 @@ const moment = require('moment');
 const Joi = require("joi");
 const uuid = require('uuid');
 const resourceRepo = require('../repository/resourceRepo');
+const thumbnailService = require('../service/thumbnailService');
+const constant = require('./../constant/constant');
 const auth = require("../middleware/authInterceptor");
 const router = express.Router();
 const multer = require('multer');
@@ -14,6 +16,45 @@ const AWS = require('aws-sdk');
 AWS.config.update({ region: 'us-east-1' });
 const s3 = new AWS.S3();
 
+var uploadImage = multer({
+  storage: multerS3({
+    s3: s3,
+    bucket: 'test',
+    // shouldTransform: function (req, file, cb) {
+    //     cb(null, /^image/i.test(file.mimetype))
+    // },
+    acl: 'public-read',
+    contentType: multerS3.AUTO_CONTENT_TYPE,
+    shouldTransform: function (req, file, cb) {
+      //  console.log('in should transform ', file)
+      cb(null, /^image/i.test(file.mimetype))
+    },
+    transforms: [{
+      id: 'original',
+      key: function (req, file, cb) {
+        //    console.log('original')
+        cb(null, "original")
+      },
+      transform: function (req, file, cb) {
+        //    console.log('original1')
+
+        cb(null, sharp().jpg())
+      }
+    }, {
+      id: 'thumbnail',
+      key: function (req, file, cb) {
+        //   console.log('thumbnail')
+
+        cb(null, "thumbnail")
+      },
+      transform: function (req, file, cb) {
+        //    console.log('thumbnail1')
+
+        cb(null, sharp().resize(100, 100).jpg())
+      }
+    }]
+  })
+})
 const upload = multer({
   storage: multerS3({
     s3: s3,
@@ -31,12 +72,19 @@ const upload = multer({
       }
     },
     metadata: function (req, file, cb) {
+      //   console.log(file.name)
       cb(null, { fieldName: file.fieldname });
     }
   })
 });
 
+router.post('/upload', upload.single('image'), function (req, res, next) {
+  console.log('filessss ', req.file)
+  res.send('Successfully uploaded ' + req.file + ' files!')
+})
+
 router.get("/getResourcesByMemberUuid", auth, async (req, res, next) => {
+  console.log("Get Resources called")
   if (!req.userDate.memberUuid) {
     return next(new Error('Unknown memberUuid'));
   }
@@ -48,49 +96,84 @@ router.get("/getResourcesByMemberUuid", auth, async (req, res, next) => {
   let resources = [];
 
   items.Items.forEach(res => {
-    //change date to readable formate
-    res.createDate = moment.utc(res.createDate).local();
-
+    //  console.log(res.info.originalname);
+    //change date to readable format
+    // res.createDate = moment.utc(res.createDate).format("YYYY-MM-DD HH:mm:ss a");
+    // res.updatedDate = moment.utc(res.updatedDate).format("YYYY-MM-DD HH:mm:ss a");
     //add preSingedUrl to access private data
     res.preSignedUrl = s3.getSignedUrl('getObject', {
-      Bucket: res.fileLocation.bucket,
-      Key: res.fileLocation.key,
+      Bucket: res.info.bucket,
+      Key: res.info.key,
       Expires: 60 * 5
-    })
+    });
+    // res.preSignedUrl = s3.getSignedUrl('getObject', {
+    //   Bucket: res.thumbnailLocation.bucket,
+    //   Key: res.thumbnailLocation.key,
+    //   Expires: 60 * 5
+    // });
     resources.push(res);
   });
 
   //latest first
+  console.log('Response sent ' + resources.length)
   res.send(resources.sort((a, b) => b.createDate - a.createDate));
 });
 
 //create resource
-router.post("/addResource", auth, upload.array('file', 1), async (req, res, next) => {
-  req.body.fileLocation = req.files[0];
-  const { error, value } = validateResource(req.body);
+router.post("/addResource", auth, upload.array('file'), async (req, res, next) => {
+console.log("Add resources")
+  let promises = [];
 
-  if (error) {
-    res.statusCode = 404;
-    return next(error);
+  for (const file of req.files) {
+    let resource = {};
+    resource.memberUuid = req.userDate.memberUuid;
+    resource.resourceUuid = uuid.v4();
+    resource.createDate = Date.now();
+    resource.info = file
+    promises.concat(resourceRepo.createResource(resource));
   }
-  value.memberUuid = req.userDate.memberUuid;
-  let response = await resourceRepo.createResource(value);
+
+  let response = await Promise.all([promises]);
 
   if (response.message) {
     return next(new Error(response.message));
   }
-  res.send(value);
+  console.log('Files added to s3 and database' + promises.length)
+  res.send(response);
+
+  // req.body.fileLocation = req.files[0];
+  //Might have to move it to lambda later on
+  //create thumbnail and add url to database
+  //replace video with something that identify it has video
+  //   if (false) {
+  //     fileType = fileType[0].slice(1)
+  //     if (allowedVideoTypes.indexOf(fileType) === -1) {
+  //       throw new Error(`filetype: ${fileType} is not an allowed type`)
+  //     }
+  //     req.body.thumbnailLocation = await thumbnailService.createVideoThumbnail(req.body.fileLocation);
+  //   }
+  // console.log('Adding resource')
+  // const { error, value } = validateResource(req.body);
+
+  // if (error) {
+  //   res.statusCode = 404;
+  //   return next(error);
+  // }
+
+
+
 });
 
 function validateResource(resource) {
   const now = Date.now();
   const schema = {
     resourceUuid: Joi.string().default(uuid.v4()),
-    name: Joi.string().required(),
+    originalname: Joi.string().required(),
     fileLocation: Joi.object().required(),
+    //  thumbnailLocation: Joi.object().required(),
     memberUuid: Joi.string().optional().default('TBD'),
     createDate: Joi.string().optional().default(now),
-    updatedDate: Joi.string().optional().default(moment(now).format("MMMM Do YYYY, HH:mm:ss.SSSS A Z")),
+    updatedDate: Joi.string().optional().default(now)
   };
 
   return Joi.validate(resource, schema);
