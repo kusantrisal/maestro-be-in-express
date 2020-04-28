@@ -8,7 +8,7 @@ const constant = require('./../constant/constant');
 const auth = require("../middleware/authInterceptor");
 const router = express.Router();
 const multer = require('multer');
-const multerS3 = require('multer-s3');
+const multerS3 = require('multer-s3-transform');
 const { v4: uuidv4 } = require('uuid');
 
 const fs = require('fs');
@@ -16,51 +16,80 @@ const AWS = require('aws-sdk');
 AWS.config.update({ region: 'us-east-1' });
 const s3 = new AWS.S3();
 
-var uploadImage = multer({
-  storage: multerS3({
-    s3: s3,
-    bucket: 'test',
-    // shouldTransform: function (req, file, cb) {
-    //     cb(null, /^image/i.test(file.mimetype))
-    // },
-    acl: 'public-read',
-    contentType: multerS3.AUTO_CONTENT_TYPE,
-    shouldTransform: function (req, file, cb) {
-      //  console.log('in should transform ', file)
-      cb(null, /^image/i.test(file.mimetype))
-    },
-    transforms: [{
-      id: 'original',
-      key: function (req, file, cb) {
-        //    console.log('original')
-        cb(null, "original")
-      },
-      transform: function (req, file, cb) {
-        //    console.log('original1')
+const sharp = require('sharp');
 
-        cb(null, sharp().jpg())
-      }
-    }, {
-      id: 'thumbnail',
-      key: function (req, file, cb) {
-        //   console.log('thumbnail')
-
-        cb(null, "thumbnail")
-      },
-      transform: function (req, file, cb) {
-        //    console.log('thumbnail1')
-
-        cb(null, sharp().resize(100, 100).jpg())
-      }
-    }]
-  })
-})
-const upload = multer({
+//will assign resource uuid
+const fileFilter = (req, file, cb) => {
+  if (file.mimetype === 'image/jpeg' || file.mimetype === 'image/png' || file.mimetype === 'image/jpg') {
+    req.resourceUuid = uuidv4();
+    cb(null, true);
+  } else {
+    cb(new Error(message.FAIL.invalidImage), false);
+  }
+};
+const roundedCorners = Buffer.from(
+  '<svg><rect x="0" y="0" width="200" height="200" rx="50" ry="50"/></svg>'
+)
+const uploadThumbNail = multer({
+  fileFilter,
   storage: multerS3({
     s3: s3,
     bucket: process.env.MEMBER_RESOURCES || 'zerotoheroquick-member-resources',
     key: function (req, file, cb) {
-      cb(null, req.userDate.memberUuid + '/' + uuidv4() + '/' + file.originalname); //use Date.now() for unique file keys
+      cb(null, req.userDate.memberUuid + '/' + req.resourceUuid + '/thumbnail/' + file.originalname); //use Date.now() for unique file keys
+    },
+    contentType: function (req, file, cb) {
+      if (file.mimetype === 'image/jpeg' || file.mimetype === 'image/png') {
+        cb(null, 'image/jpeg');
+      } else if (file.mimetype === 'video/mp4') {
+        cb(null, 'video/mp4');
+      } else {
+        cb(null, file.mimetype);
+      }
+    },
+    limits: {
+      fileSize: 1000,
+      files: 5
+    },
+    metadata: function (req, file, cb) {
+      cb(null, { fieldName: file.fieldname });
+    },
+    shouldTransform: function (req, file, cb) {
+      cb(null, true);
+    },
+    transforms: [
+      {
+        id: 'original',
+        key: function (req, file, cb) {
+          cb(null, req.userDate.memberUuid + '/' + req.resourceUuid + '/original/' + file.originalname)
+        },
+        transform: function (req, file, cb) {
+          //Perform desired transformations
+          cb(null, sharp().jpeg({ progressive: true, force: false }));
+        }
+      },
+      {
+        id: 'original',
+        key: function (req, file, cb) {
+          cb(null, req.userDate.memberUuid + '/' + req.resourceUuid + '/thumbnail/' + file.originalname)
+        },
+        transform: function (req, file, cb) {
+          //Perform desired transformations
+          cb(null, sharp()
+            .resize(500, 300)
+            .jpeg())
+        }
+      }]
+  })
+});
+
+const upload = multer({
+  fileFilter,
+  storage: multerS3({
+    s3: s3,
+    bucket: process.env.MEMBER_RESOURCES || 'zerotoheroquick-member-resources',
+    key: function (req, file, cb) {
+      cb(null, req.userDate.memberUuid + '/original/' + uuidv4() + '/' + file.originalname); //use Date.now() for unique file keys
     },
     contentType: function (req, file, cb) {
       if (file.mimetype === 'image/jpeg' || file.mimetype === 'image/png') {
@@ -72,19 +101,13 @@ const upload = multer({
       }
     },
     metadata: function (req, file, cb) {
-      //   console.log(file.name)
       cb(null, { fieldName: file.fieldname });
     }
   })
 });
 
-router.post('/upload', upload.single('image'), function (req, res, next) {
-  console.log('filessss ', req.file)
-  res.send('Successfully uploaded ' + req.file + ' files!')
-})
-
 router.get("/getResourcesByMemberUuid", auth, async (req, res, next) => {
-  console.log("Get Resources called")
+ // console.log("Get Resources called")
   if (!req.userDate.memberUuid) {
     return next(new Error('Unknown memberUuid'));
   }
@@ -101,9 +124,10 @@ router.get("/getResourcesByMemberUuid", auth, async (req, res, next) => {
     // res.createDate = moment.utc(res.createDate).format("YYYY-MM-DD HH:mm:ss a");
     // res.updatedDate = moment.utc(res.updatedDate).format("YYYY-MM-DD HH:mm:ss a");
     //add preSingedUrl to access private data
+
     res.preSignedUrl = s3.getSignedUrl('getObject', {
-      Bucket: res.info.bucket,
-      Key: res.info.key,
+      Bucket: res.info.bucket || res.info.transforms[0].bucket,
+      Key: res.info.key || res.info.transforms[0].key,
       Expires: 60 * 5
     });
     // res.preSignedUrl = s3.getSignedUrl('getObject', {
@@ -115,19 +139,19 @@ router.get("/getResourcesByMemberUuid", auth, async (req, res, next) => {
   });
 
   //latest first
-  console.log('Response sent ' + resources.length)
+ // console.log('Response sent ' + resources.length)
   res.send(resources.sort((a, b) => b.createDate - a.createDate));
 });
 
 //create resource
-router.post("/addResource", auth, upload.array('file'), async (req, res, next) => {
-console.log("Add resources")
+router.post("/addResource", auth, uploadThumbNail.array('file'), async (req, res, next) => {
   let promises = [];
-
   for (const file of req.files) {
     let resource = {};
+    let resourceUuid = file.transforms[0].key.split('/')[1] || file.key.split('/')[1];
+    let fileType = file.transforms[0].key.split('/')[2] || file.key.split('/')[2];
     resource.memberUuid = req.userDate.memberUuid;
-    resource.resourceUuid = uuid.v4();
+    resource.resourceUuid = resourceUuid;
     resource.createDate = Date.now();
     resource.info = file
     promises.concat(resourceRepo.createResource(resource));
@@ -138,7 +162,6 @@ console.log("Add resources")
   if (response.message) {
     return next(new Error(response.message));
   }
-  console.log('Files added to s3 and database' + promises.length)
   res.send(response);
 
   // req.body.fileLocation = req.files[0];
@@ -179,7 +202,50 @@ function validateResource(resource) {
   return Joi.validate(resource, schema);
 }
 
+router.post('/upload', uploadThumbNail.single('image'), function (req, res, next) {
+ // console.log('filessss ', req.file)
+  res.send('Successfully uploaded ' + req.file + ' files!')
+})
 
+var uploadImage = multer({
+  storage: multerS3({
+    s3: s3,
+    bucket: 'test',
+    // shouldTransform: function (req, file, cb) {
+    //     cb(null, /^image/i.test(file.mimetype))
+    // },
+    acl: 'public-read',
+    contentType: multerS3.AUTO_CONTENT_TYPE,
+    shouldTransform: function (req, file, cb) {
+      //  console.log('in should transform ', file)
+      cb(null, /^image/i.test(file.mimetype))
+    },
+    transforms: [{
+      id: 'original',
+      key: function (req, file, cb) {
+        //    console.log('original')
+        cb(null, "original")
+      },
+      transform: function (req, file, cb) {
+        //    console.log('original1')
+
+        cb(null, sharp().jpg())
+      }
+    }, {
+      id: 'thumbnail',
+      key: function (req, file, cb) {
+        //   console.log('thumbnail')
+
+        cb(null, "thumbnail")
+      },
+      transform: function (req, file, cb) {
+        //    console.log('thumbnail1')
+
+        cb(null, sharp().resize(100, 100).jpg())
+      }
+    }]
+  })
+})
 ///////////
 
 // const resources = [
