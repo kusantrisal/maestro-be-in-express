@@ -17,14 +17,15 @@ const createResource = async resource => {
     }
 }
 
-const deleteResource = async (resource, memberUuid) => {
+const deleteResource = async (resourceUuid, memberUuid) => {
     try {
         let params = {
             TableName: process.env.RESOURCE || 'RESOURCE',
             Key: {
-                'resourceUuid': resource.resourceUuid,
+                'resourceUuid': resourceUuid,
                 'memberUuid': memberUuid
-            }
+            },
+            ReturnValues: 'ALL_OLD'
         };
         return await dynamoClient.delete(params).promise();
     } catch (e) {

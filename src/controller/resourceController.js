@@ -107,7 +107,7 @@ const upload = multer({
 });
 
 router.get("/getResourcesByMemberUuid", auth, async (req, res, next) => {
- // console.log("Get Resources called")
+  // console.log("Get Resources called")
   if (!req.userDate.memberUuid) {
     return next(new Error('Unknown memberUuid'));
   }
@@ -126,20 +126,20 @@ router.get("/getResourcesByMemberUuid", auth, async (req, res, next) => {
     //add preSingedUrl to access private data
 
     res.preSignedUrlForThumbnail = s3.getSignedUrl('getObject', {
-      Bucket:  res.info.transforms.filter(info => info.id == 'thumbnail')[0].bucket,
-      Key:  res.info.transforms[0].key,
+      Bucket: res.info.transforms.filter(info => info.id == 'thumbnail')[0].bucket,
+      Key: res.info.transforms[0].key,
       Expires: 60 * 5
     });
     res.preSignedUrlForOriginal = s3.getSignedUrl('getObject', {
-      Bucket:  res.info.transforms.filter(info => info.id == 'original')[0].bucket,
-      Key:  res.info.transforms[0].key,
+      Bucket: res.info.transforms.filter(info => info.id == 'original')[0].bucket,
+      Key: res.info.transforms[0].key,
       Expires: 60 * 5
     });
     resources.push(res);
   });
 
   //latest first
- // console.log('Response sent ' + resources.length)
+  // console.log('Response sent ' + resources.length)
   res.send(resources.sort((a, b) => b.createDate - a.createDate));
 });
 
@@ -187,6 +187,34 @@ router.post("/addResource", auth, uploadThumbNail.array('file'), async (req, res
 
 });
 
+router.delete("/deleteResource", auth, async (req, res, next) => {
+
+  let response = await resourceRepo.deleteResource(req.query.resourceUuid, req.userDate.memberUuid);
+
+  if (response) {
+    let bucket = '';
+    let listOfObjects = [];
+    response.Attributes.info.transforms.forEach(transform => {
+      bucket = transform.bucket;
+      listOfObjects.push({ Key: transform.key });
+    });
+    let params = {
+      Bucket: bucket,
+      Delete: {
+        Objects: listOfObjects
+      }
+    }
+    response = await s3.deleteObjects(params).promise();
+  }
+
+  if (response.message) {
+    return next(new Error(response.message));
+  }
+
+  res.send(response);
+});
+
+
 function validateResource(resource) {
   const now = Date.now();
   const schema = {
@@ -203,7 +231,7 @@ function validateResource(resource) {
 }
 
 router.post('/upload', uploadThumbNail.single('image'), function (req, res, next) {
- // console.log('filessss ', req.file)
+  // console.log('filessss ', req.file)
   res.send('Successfully uploaded ' + req.file + ' files!')
 })
 
