@@ -124,17 +124,18 @@ router.get("/getResourcesByMemberUuid", auth, async (req, res, next) => {
     // res.createDate = moment.utc(res.createDate).format("YYYY-MM-DD HH:mm:ss a");
     // res.updatedDate = moment.utc(res.updatedDate).format("YYYY-MM-DD HH:mm:ss a");
     //add preSingedUrl to access private data
-
+ 
     res.preSignedUrlForThumbnail = s3.getSignedUrl('getObject', {
       Bucket: res.info.transforms.filter(info => info.id == 'thumbnail')[0].bucket,
-      Key: res.info.transforms[0].key,
+      Key: res.info.transforms.filter(info => info.id == 'thumbnail')[0].key,
       Expires: 60 * 5
     });
     res.preSignedUrlForOriginal = s3.getSignedUrl('getObject', {
       Bucket: res.info.transforms.filter(info => info.id == 'original')[0].bucket,
-      Key: res.info.transforms[0].key,
+      Key: res.info.transforms.filter(info => info.id == 'original')[0].key,
       Expires: 60 * 5
     });
+    
     resources.push(res);
   });
 
