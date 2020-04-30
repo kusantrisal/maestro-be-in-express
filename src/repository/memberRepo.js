@@ -22,7 +22,7 @@ const deleteMember = async member => {
             TableName: process.env.MEMBER || 'MEMBER',
             Key: {
                 'memberUuid': member.memberUuid,
-            //    'email': member.email
+                //    'email': member.email
             }
         };
         return await dynamoClient.delete(params).promise();
@@ -32,9 +32,7 @@ const deleteMember = async member => {
 }
 
 const updateMemberValue = async (memberUuid, key, value) => {
-    console.log(memberUuid);
-    console.log(key);
-    console.log(value);
+
     try {
         let params = {
             TableName: process.env.MEMBER || 'MEMBER',
@@ -47,9 +45,9 @@ const updateMemberValue = async (memberUuid, key, value) => {
             },
             ExpressionAttributeValues: {
                 ":value": value
-            }
+            },
+            ReturnValues: 'ALL_NEW'
         };
-        console.log(params)
         return await dynamoClient.update(params).promise();
     } catch (e) {
         return e;

@@ -1,10 +1,20 @@
+const serverless = require('serverless-http');
+// let formidable = require('express-formidable');
+// let path = require('path');
 const express = require("express");
 const WebSocket = require('ws');
 const SocketServer = require('ws').Server;
 const app = express();
-
+const wsService = require('./src/service/wsService')
 const errorHandler = require("./src/middleware/errorHandler")
 const bodyParser = require('body-parser');
+
+// app.use(formidable({
+//     encoding: 'utf-8',
+//     uploadDir: path.join(__dirname, 'resource'),
+//     multiples: true,
+//     keepExtensions:true// req.files to be arrays of files
+//     }));
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -41,21 +51,11 @@ let server = app.listen(port, () => console.log(`Maestro started in port ${port}
 const wss = new SocketServer({ server });
 
 wss.on('connection', function (ws, req, client) {
-    console.info("websocket connection open");
 
-    if (ws.readyState === ws.OPEN) {
-        ws.send(JSON.stringify({
-            msg1: 'yo, im msg 1'
-        }))
+    wsService.userConnected(req, ws);
 
-        setTimeout(() => {
-            ws.send(JSON.stringify({
-                msg2: 'yo, im a delayed msg 2'
-            }))
-        }, 1000)
-    }
     ws.on('message', function (message) {
-
+        console.log(JSON.stringify(req));
         let data;
         try {
             data = JSON.parse(message);
@@ -83,8 +83,9 @@ wss.on('connection', function (ws, req, client) {
     });
 
     wss.on("close", function () {
-        console.log("websocket connection close")
+        wsService.userDisconnected(req, ws);
     })
 
 });
 
+module.exports.handler = serverless(app);
