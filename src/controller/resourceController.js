@@ -37,12 +37,14 @@ router.get("/getResourcesByMemberUuid", auth, async (req, res, next) => {
     // res.createDate = moment.utc(res.createDate).format("YYYY-MM-DD HH:mm:ss a");
     // res.updatedDate = moment.utc(res.updatedDate).format("YYYY-MM-DD HH:mm:ss a");
     //add preSingedUrl to access private data
-
-    res.preSignedUrlForThumbnail = s3.getSignedUrl('getObject', {
-      Bucket: res.info.transforms.filter(info => info.id == 'thumbnail')[0].bucket,
-      Key: res.info.transforms.filter(info => info.id == 'thumbnail')[0].key,
-      Expires: 60 * 5
-    });
+    
+    //TODO disabled until we fix the sharp issue
+    // res.preSignedUrlForThumbnail = s3.getSignedUrl('getObject', {
+    //   Bucket: res.info.transforms.filter(info => info.id == 'thumbnail')[0].bucket,
+    //   Key: res.info.transforms.filter(info => info.id == 'thumbnail')[0].key,
+    //   Expires: 60 * 5
+    // });
+    
     res.preSignedUrlForOriginal = s3.getSignedUrl('getObject', {
       Bucket: res.info.transforms.filter(info => info.id == 'original')[0].bucket,
       Key: res.info.transforms.filter(info => info.id == 'original')[0].key,
@@ -135,7 +137,7 @@ router.post("/addResource", auth, uploadThumbNail.array('image'), async (req, re
     if (file.transforms) {
       resourceUuid = file.transforms[0].key.split('/')[1];
     } else {
-      resourceUuid = file.transforms[0].key.split('/')[1] || file.key.split('/')[1];
+      resourceUuid = file.key.split('/')[1];
     }
 
     //  let fileType = file.transforms[0].key.split('/')[2] || file.key.split('/')[2];
