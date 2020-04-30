@@ -93,6 +93,7 @@ const uploadThumbNail = multer({
       cb(null, { fieldName: file.fieldname });
     },
     shouldTransform: function (req, file, cb) {
+      //where to transform file or not
       cb(null, false);
     },
     transforms: [
@@ -123,11 +124,21 @@ const uploadThumbNail = multer({
 
 //create resource
 router.post("/addResource", auth, uploadThumbNail.array('image'), async (req, res, next) => {
+  console.log(req);
+  console.log(req.body)
+  console.log(req.files);
   let promises = [];
   for (const file of req.files) {
     let resource = {};
-    let resourceUuid = file.transforms[0].key.split('/')[1] || file.key.split('/')[1];
-    let fileType = file.transforms[0].key.split('/')[2] || file.key.split('/')[2];
+    let resourceUuid;
+
+    if (file.transforms) {
+      resourceUuid = file.transforms[0].key.split('/')[1];
+    } else {
+      resourceUuid = file.transforms[0].key.split('/')[1] || file.key.split('/')[1];
+    }
+
+    //  let fileType = file.transforms[0].key.split('/')[2] || file.key.split('/')[2];
     resource.memberUuid = req.userDate.memberUuid;
     resource.resourceUuid = resourceUuid;
     resource.createDate = Date.now();
